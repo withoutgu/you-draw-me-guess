@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>你画我猜</title>
+    <style>
+        html{font-size: 16px;}
+        body{
+            margin: 0;
+            padding:0;
+        }
+        #canvas{border: 1px solid #DDDDDD;background: #ee5f5b;}
+        #canvas2{border: 1px solid #DDDDDD;background: #0e90d2;}
+        #index{width:960px;height: 480px;position: relative;background: #f3f3f3;left:50%;margin-left: -480px;margin-top: 80px;text-align: center;line-height: 480px;display: flex;}
+        #index a{text-decoration: none;color: #fff;padding: 20px;border-radius: 30;background: #ee5f5b;font-size: 3rem;flex: 1;margin-left: 10px;}
+        #index a:nth-child(1){background: #0e90d2;}
+        #guess,#draw{width: 700px;position: relative;left: 50%;margin-left: -350px;top: 100px}
+        #anwBtn,#askbtn,#clear{width:80px;height: 30px;}
+        .reelect{display: inline-block;color: #333;text-decoration: none;}
+        #ask,#anwser{height: 30px;box-sizing: border-box;width: 400px;}
+    </style>
+</head>
+<body ng-controller="indexCtrl">
+    <ng-view></ng-view>
+</body>
+<script src="js/angular.js"></script>
+<script src="js/angular-route.js"></script>
+<script src="js/socket.js"></script>
+<script>
+    var socket = io('http://localhost:2425');
+    var path = {
+        beginX : 0,
+        beginY : 0,
+        endX : 0,
+        endY : 0
+    }
+    var app = angular.module("drawGuess",["ngRoute"]);
+    //画的画布
+    app.controller('drawer',['$scope',function($scope){
+        var canvas = document.getElementById("canvas");
+        var draw = document.getElementById('draw');
+        $scope.ask = '';
+        var ox = draw.offsetLeft;
+        var oy = draw.offsetTop;
+        console.log(ox,oy)
+        var ctx = canvas.getContext("2d");
+        canvas.onmousedown = function(e){
+            ctx.beginPath();
+            ctx.strokeStyle = "#fff";
+            ctx.moveTo(e.clientX-ox,e.clientY-oy);
+            path.beginX = e.clientX-ox;
+            path.beginY = e.clientY-oy;
+            canvas.onmousemove = function(eve){
+                ctx.lineTo(eve.clientX-ox,eve.clientY-oy);
+                path.endX = eve.clientX-ox;
+                path.endY = eve.clientY-oy;
+                socket.emit("draw",path)
+                ctx.stroke();
+            }
+        }
+        canvas.onmouseup = function(){
+            canvas.onmousemove = null;
+            socket.emit("stop","stop")
+        }
+        //出题
+        $scope.askBtn= function(){
+            socket.emit("ask",$scope.ask)
+        }
+        $scope.clearBtn = function(){
+            //清空画布
+            ctx.clearRect(0, 0, 700, 400);
+            //告诉对方已经清空
+            socket.emit('clear','clear');
+        }
+        //接受答题状态
+        socket.on('status',function(data){
+            if(data == true){
+                alert('对方猜对啦!');
+                //清空画布
+                ctx.clearRect(0, 0, 700, 400);
+                //清空出题
+                $scope.ask = '';
+                socket.emit('ask',$scope.aks);
+            }
+        })
+    }])
+    //猜的画布
+    app.controller('guesser',['$scope',function($scope){
+        var canvas2 = document.getElementById("canvas2");
+        var ctx2 = canvas2.getContext("2d");
+        var isswitch = true;
+        $scope.answer = '';
+        var ask;
+        //重画
+        socket.on("paint",function(data){
+            console.log(data);
+            if(isswitch){
+                ctx2.beginPath();
+                ctx2.moveTo(data.beginX,data.beginY);
+               isswitch = false;
+            }else if(data == 'stop'){
+                isswitch = true;
+            }
+            ctx2.lineTo(data.endX,data.endY);
+            ctx2.stroke();
+        })
+        //清空画布
+        socket.on("clear",function(data){
+            ctx2.clearRect(0,0,700,400);
+        })
+        //接受答案
+        socket.on("ask",function(data){
+            ask = data;
+        })
+        $scope.answerBtn = function(){
+            if($scope.answer == ask){
+                alert('你猜对了');
+                socket.emit('status',true);
+                $scope.answer = '';
+                ctx2.clearRect(0,0,700,400);
+            }else(
+                alert('你猜错了')
+            )
+        }
+    }])
+    app.controller('indexCtrl',['$scope','$document',function($scope){
+
+    }])
+    app.config(["$routeProvider",function($routeProvider){
+        $routeProvider.when("/draw",{
+            templateUrl:'template/draw.html',
+            controller:'drawer'
+        }).when('/guess',{
+            templateUrl:'template/guess.html',
+            controller:'guesser'
+        }).when('/index',{
+            templateUrl:'template/index.html',
+            controller:'indexCtrl'
+        }).otherwise({
+            redirectTo: '/index'
+        });
+    }]);
+
+    angular.bootstrap(document,['drawGuess'])
+</script>
+</html>
